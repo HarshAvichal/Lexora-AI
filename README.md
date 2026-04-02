@@ -29,7 +29,7 @@ packages/shared   # Shared types and constants
    npm install
    ```
 
-2. **Environment:** copy `.env.example` → `.env` at the repo root and set `DATABASE_URL` (and other vars as you enable features). `POSTGRES_*` must match the password embedded in `DATABASE_URL` when using Docker Postgres.
+2. **Environment:** create a **`.env`** file at the repo root (it is gitignored). At minimum set **`DATABASE_URL`**; **`POSTGRES_*`** must match the password embedded in `DATABASE_URL` when using Docker Postgres. See **Authentication** below for Firebase variables.
 
 3. **Infrastructure:**
 
@@ -51,7 +51,22 @@ packages/shared   # Shared types and constants
    npm run dev:api
    ```
 
-   Health check: `GET http://localhost:4000/health`
+   Health check: `GET http://localhost:4000/health`  
+   With Firebase configured, protected profile: `GET http://localhost:4000/v1/me` with header `Authorization: Bearer <Firebase ID token>`.
+
+## Authentication (Firebase)
+
+- **Client (Next.js, when added):** Firebase Auth — e.g. **Google** sign-in — obtains an **ID token** after login.
+- **API:** **Firebase Admin SDK** verifies the token and syncs the **`users`** table (`firebase_uid`, `email`, `display_name`).
+
+**Server env (pick one):**
+
+| Variable | Purpose |
+|----------|---------|
+| **`FIREBASE_SERVICE_ACCOUNT_JSON`** | Single-line JSON string of the Firebase **service account** key (from Firebase Console → Project settings → Service accounts). |
+| **`GOOGLE_APPLICATION_CREDENTIALS`** | Absolute path to the same JSON file on disk (alternative to the variable above). |
+
+Never commit service account keys. For local Next.js + API on different ports, set **`CORS_ORIGIN=http://localhost:3000`** (comma-separated list allowed).
 
 **Optional — run the API in Docker as well** (after migrations, from the host):
 
