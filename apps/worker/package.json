@@ -1,0 +1,9 @@
+{
+  "name": "@lexora/worker",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"Scaffold ingestion worker here\" && exit 1",
+    "build": "echo \"Scaffold worker build here\" && exit 1"
+  }
+}
