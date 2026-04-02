@@ -1,4 +1,4 @@
-# Lexora
+# Lexora AI
 
 **Lexora** is a video intelligence platform: ingest YouTube videos (and later playlists), turn transcripts into searchable embeddings, and answer questions with **timestamp-backed** citations. The codebase is structured for **single-video MVP first**, with schema and APIs designed to grow into **multi-video**, **playlist**, and **comparison** flows.
 
