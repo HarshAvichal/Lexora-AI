@@ -1,0 +1,9 @@
+{
+  "name": "@lexora/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"Scaffold Next.js (App Router) here\" && exit 1",
+    "build": "echo \"Scaffold Next.js build here\" && exit 1"
+  }
+}

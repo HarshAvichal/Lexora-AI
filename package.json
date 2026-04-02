@@ -1,0 +1,21 @@
+{
+  "name": "lexora",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @lexora/web",
+    "dev:api": "npm run dev -w @lexora/api",
+    "dev:worker": "npm run dev -w @lexora/worker",
+    "db:generate": "npm run db:generate -w @lexora/db",
+    "db:migrate": "npm run db:migrate -w @lexora/db",
+    "db:studio": "npm run db:studio -w @lexora/db",
+    "compose:up": "docker compose up -d",
+    "compose:up:full": "docker compose --profile app up -d --build"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
