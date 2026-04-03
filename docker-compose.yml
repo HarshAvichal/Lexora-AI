@@ -71,6 +71,8 @@ services:
       dockerfile: docker/api.Dockerfile
     ports:
       - "${API_PORT:-4000}:4000"
+    env_file:
+      - .env
     environment:
       API_PORT: 4000
       DATABASE_URL: postgresql://${POSTGRES_USER:-lexora}:${POSTGRES_PASSWORD:-lexora}@postgres:5432/${POSTGRES_DB:-lexora}
