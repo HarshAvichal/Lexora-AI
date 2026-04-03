@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply min-h-screen bg-lexora-void text-zinc-100 antialiased;
+}
+
+/* Smooth focus rings */
+*:focus-visible {
+  @apply outline-none ring-2 ring-violet-500/60 ring-offset-2 ring-offset-lexora-void;
+}
