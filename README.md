@@ -4,7 +4,7 @@
 
 ## Stack
 
-- **Frontend:** Next.js (App Router), TypeScript, Tailwind (scaffolded under `apps/web`)
+- **Frontend:** Next.js 15 (App Router), TypeScript, Tailwind, Firebase Auth (`apps/web`)
 - **Backend:** Node.js, Express, TypeScript (`apps/api`)
 - **Worker:** Node ingestion pipeline (`apps/worker`)
 - **Data:** PostgreSQL (Drizzle ORM), Redis, Qdrant, Ollama + BGE-class embeddings (wired incrementally)
@@ -54,9 +54,31 @@ packages/shared   # Shared types and constants
    Health check: `GET http://localhost:4000/health`  
    With Firebase configured, protected profile: `GET http://localhost:4000/v1/me` with header `Authorization: Bearer <Firebase ID token>`.
 
+## Frontend (`apps/web`)
+
+Create **`apps/web/.env.local`** (gitignored) with your **Firebase Web App** config from the console (Project settings → Your apps → Web):
+
+| Variable | Notes |
+|----------|--------|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Public web API key |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | e.g. `your-project.firebaseapp.com` |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Project ID |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | As shown in config |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | As shown in config |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | As shown in config |
+| `NEXT_PUBLIC_API_URL` | Optional; default `http://localhost:4000` for `/v1/me` on the dashboard |
+
+In **Firebase Console → Authentication → Sign-in method**, enable **Google** and **Email/Password** (used by the login/signup pages). Under **Settings → Authorized domains**, ensure **`localhost`** is listed for local dev.
+
+```bash
+npm run dev:web
+```
+
+Open [http://localhost:3000](http://localhost:3000) — marketing home, `/login`, `/signup`, and `/dashboard` (after sign-in).
+
 ## Authentication (Firebase)
 
-- **Client (Next.js, when added):** Firebase Auth — e.g. **Google** sign-in — obtains an **ID token** after login.
+- **Client:** Firebase Auth (Google + email/password) supplies an **ID token** to the API.
 - **API:** **Firebase Admin SDK** verifies the token and syncs the **`users`** table (`firebase_uid`, `email`, `display_name`).
 
 **Server env (pick one):**
@@ -81,7 +103,7 @@ npm run compose:up:full
 | Script | Purpose |
 |--------|---------|
 | `npm run dev:api` | Express API with `tsx watch` |
-| `npm run dev:web` | Next.js (once scaffolded) |
+| `npm run dev:web` | Next.js dev server (port 3000) |
 | `npm run db:migrate` | Apply SQL migrations to Postgres |
 | `npm run db:generate` | Regenerate migrations from Drizzle schema |
 | `npm run compose:up` | `docker compose up -d` (infra) |
