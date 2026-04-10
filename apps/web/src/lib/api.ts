@@ -97,3 +97,36 @@ export async function fetchIngestionJob(
   const data = (await res.json()) as { job: IngestionJobDto };
   return data.job;
 }
+
+export type SearchResultItem = {
+  score: number;
+  chunkId: string;
+  videoId: string;
+  videoTitle: string | null;
+  youtubeVideoId: string;
+  chunkIndex: number;
+  startMs: number;
+  endMs: number;
+  chunkText: string;
+};
+
+export async function semanticSearch(
+  idToken: string,
+  params: { query: string; videoId?: string; limit?: number },
+): Promise<SearchResultItem[]> {
+  const res = await fetch(`${base}/v1/search`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: params.query,
+      ...(params.videoId ? { videoId: params.videoId } : {}),
+      ...(params.limit != null ? { limit: params.limit } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(await readApiError(res));
+  const data = (await res.json()) as { results: SearchResultItem[] };
+  return data.results;
+}
