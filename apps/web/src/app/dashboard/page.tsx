@@ -9,6 +9,7 @@ import { getFirebaseAuth } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { VideoIngestCard } from "@/components/dashboard/VideoIngestCard";
 import { VideoLibrary } from "@/components/dashboard/VideoLibrary";
+import { VideoSearchCard } from "@/components/dashboard/VideoSearchCard";
 import { fetchMe, fetchVideos, type MeResponse, type VideoDto } from "@/lib/api";
 
 export default function DashboardPage() {
@@ -121,8 +122,8 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="mt-2 max-w-xl text-zinc-500">
-              Ingest YouTube videos and track progress while the worker pulls transcripts into
-              Lexora.
+              Ingest YouTube videos, search transcripts, ask questions with cited answers, and open
+              the exact moment on YouTube.
             </p>
           </div>
         </div>
@@ -199,10 +200,16 @@ export default function DashboardPage() {
             </div>
             <p className="px-1 text-center text-xs text-zinc-600 lg:text-left">
               Run{" "}
-              <code className="rounded bg-black/30 px-1 text-zinc-500">npm run dev:worker</code> so
-              queued jobs are processed.
+              <code className="rounded bg-black/30 px-1 text-zinc-500">npm run dev:worker</code>{" "}
+              for ingestion. Ensure Docker has Qdrant + Ollama and pull{" "}
+              <code className="rounded bg-black/30 px-1 text-zinc-500">nomic-embed-text</code> (see
+              README).
             </p>
           </div>
+        </div>
+
+        <div className="mt-12">
+          <VideoSearchCard user={user} videos={videos} />
         </div>
 
         <div className="mt-12">
