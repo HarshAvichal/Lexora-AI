@@ -70,7 +70,7 @@ Use **four terminals** (or a process manager). Order: infra → migrations (once
 
 **Health check:** `GET http://localhost:4000/health`  
 **With Firebase configured:** `GET http://localhost:4000/v1/me` with header `Authorization: Bearer <Firebase ID token>`.  
-**Semantic search:** `POST /v1/search` · **RAG answer + citations:** `POST /v1/ask` (same JSON shape: `query`, optional `videoId`, optional `limit`).
+**Semantic search:** `POST /v1/search` · **RAG answer + citations:** `POST /v1/ask` (same JSON shape: `query`, optional `videoId`, optional `limit`). **Streaming Ask (SSE):** `POST /v1/ask/stream` with the same JSON body returns `text/event-stream` events, each line `data: { … }\n\n`: first `{"type":"citations","citations":[…]}`, then `{"type":"delta","text":"…"}` chunks from Ollama, then `{"type":"done"}`; on failure mid-stream, `{"type":"error","message":"…"}` (optional `code`). The dashboard Ask UI consumes this endpoint for live typing. **Export:** the web app can copy or download the Q&A as Markdown with citation links (no extra API).
 
 **Note:** Videos ingested **before** embeddings were enabled have rows in Postgres but **no vectors in Qdrant**. Re-submit those URLs (or clear and re-ingest) so the worker runs the new embedding + indexing steps.
 

@@ -1,4 +1,5 @@
 import { ollamaChat } from "../lib/ollama-chat";
+import type { ChatMessage } from "../lib/ollama-chat";
 import type { SemanticChunkHit } from "./semantic-retrieval";
 
 const EXCERPT_MAX = 900;
@@ -79,15 +80,17 @@ function scopeInstruction(hits: SemanticChunkHit[]): string {
   return "Scope: Excerpts may come from several of the user’s videos. Only combine or compare what the excerpts actually say; do not import outside material.";
 }
 
+export type RagChatPayload =
+  | { kind: "empty"; answer: string; citations: [] }
+  | { kind: "chat"; messages: ChatMessage[]; citations: AskCitation[] };
+
 /**
- * Runs a single RAG turn: retrieve hits should already be loaded.
+ * Build chat messages + citation metadata for /v1/ask and /v1/ask/stream.
  */
-export async function generateRagAnswer(
-  userQuestion: string,
-  hits: SemanticChunkHit[],
-): Promise<{ answer: string; citations: AskCitation[] }> {
+export function buildRagChatPayload(userQuestion: string, hits: SemanticChunkHit[]): RagChatPayload {
   if (!hits.length) {
     return {
+      kind: "empty",
       answer:
         "I couldn’t find any matching transcript in your library for that question. Try ingesting a video first, or rephrase your question.",
       citations: [],
@@ -95,13 +98,29 @@ export async function generateRagAnswer(
   }
 
   const { block, citations } = buildContextBlock(hits);
-
   const userContent = `${scopeInstruction(hits)}\n\nQuestion:\n${userQuestion}\n\nTranscript excerpts:\n\n${block}`;
 
-  const answer = await ollamaChat([
-    { role: "system", content: SYSTEM_PROMPT_BASE },
-    { role: "user", content: userContent },
-  ]);
+  return {
+    kind: "chat",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT_BASE },
+      { role: "user", content: userContent },
+    ],
+    citations,
+  };
+}
 
-  return { answer, citations };
+/**
+ * Runs a single RAG turn: retrieve hits should already be loaded.
+ */
+export async function generateRagAnswer(
+  userQuestion: string,
+  hits: SemanticChunkHit[],
+): Promise<{ answer: string; citations: AskCitation[] }> {
+  const payload = buildRagChatPayload(userQuestion, hits);
+  if (payload.kind === "empty") {
+    return { answer: payload.answer, citations: [] };
+  }
+  const answer = await ollamaChat(payload.messages);
+  return { answer, citations: payload.citations };
 }

@@ -1,10 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { ExternalLink, Loader2, MessageCircle, Search } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  Copy,
+  Download,
+  ExternalLink,
+  Loader2,
+  MessageCircle,
+  Search,
+  Share2,
+} from "lucide-react";
 import type { User } from "firebase/auth";
 import type { AskResponse, SearchResultItem, VideoDto } from "@/lib/api";
-import { ragAsk, semanticSearch } from "@/lib/api";
+import { ragAskStream, semanticSearch } from "@/lib/api";
+import {
+  buildAskMarkdown,
+  copyTextToClipboard,
+  downloadMarkdownFile,
+  shareAskMarkdown,
+} from "@/lib/qa-export";
 
 function formatTimestampMs(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -37,12 +51,26 @@ export function VideoSearchCard({ user, videos }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResultItem[] | null>(null);
   const [askOut, setAskOut] = useState<AskResponse | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  const [exportHint, setExportHint] = useState<string | null>(null);
+  const exportHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function flashExportHint(message: string) {
+    if (exportHintTimer.current) clearTimeout(exportHintTimer.current);
+    setExportHint(message);
+    exportHintTimer.current = setTimeout(() => {
+      setExportHint(null);
+      exportHintTimer.current = null;
+    }, 2200);
+  }
 
   function switchMode(next: Mode) {
     setMode(next);
     setError(null);
     setResults(null);
     setAskOut(null);
+    setStreaming(false);
+    setExportHint(null);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -63,17 +91,95 @@ export function VideoSearchCard({ user, videos }: Props) {
         });
         setResults(hits);
       } else {
-        const out = await ragAsk(token, {
-          query: q,
-          ...(videoId ? { videoId } : {}),
-          limit: 12,
-        });
-        setAskOut(out);
+        setAskOut({ answer: "", citations: [] });
+        setStreaming(true);
+        let streamError: string | null = null;
+        await ragAskStream(
+          token,
+          {
+            query: q,
+            ...(videoId ? { videoId } : {}),
+            limit: 12,
+          },
+          (ev) => {
+            if (ev.type === "citations") {
+              setAskOut((prev) => ({
+                answer: prev?.answer ?? "",
+                citations: ev.citations,
+              }));
+            } else if (ev.type === "delta") {
+              setAskOut((prev) => ({
+                answer: (prev?.answer ?? "") + ev.text,
+                citations: prev?.citations ?? [],
+              }));
+            } else if (ev.type === "error") {
+              streamError = ev.message || "Ask failed.";
+            }
+          },
+        );
+        if (streamError) {
+          setAskOut(null);
+          setError(streamError);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed.");
+      setAskOut(null);
     } finally {
       setLoading(false);
+      setStreaming(false);
+    }
+  }
+
+  function slugForFilename(text: string): string {
+    const s = text
+      .trim()
+      .slice(0, 48)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    return s || "ask";
+  }
+
+  async function onCopyMarkdown() {
+    if (!askOut) return;
+    const md = buildAskMarkdown(query, askOut.answer, askOut.citations);
+    try {
+      await copyTextToClipboard(md);
+      flashExportHint("Markdown copied.");
+    } catch {
+      setError("Could not copy to clipboard.");
+    }
+  }
+
+  function onDownloadMarkdown() {
+    if (!askOut) return;
+    const md = buildAskMarkdown(query, askOut.answer, askOut.citations);
+    const name = `lexora-${slugForFilename(query)}.md`;
+    downloadMarkdownFile(name, md);
+    flashExportHint("Download started.");
+  }
+
+  async function onShareMarkdown() {
+    if (!askOut) return;
+    const md = buildAskMarkdown(query, askOut.answer, askOut.citations);
+    try {
+      await shareAskMarkdown("Lexora answer", md);
+    } catch (e) {
+      if (
+        e &&
+        typeof e === "object" &&
+        "name" in e &&
+        (e as { name: string }).name === "AbortError"
+      ) {
+        return;
+      }
+      const msg = e instanceof Error ? e.message : "Share failed.";
+      if (!msg.includes("not supported")) {
+        setError(msg);
+      } else {
+        flashExportHint("Use Copy or Download on this device.");
+      }
     }
   }
 
@@ -174,7 +280,11 @@ export function VideoSearchCard({ user, videos }: Props) {
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              {mode === "ask" ? "Thinking…" : "Searching…"}
+              {mode === "ask"
+                ? streaming && askOut?.answer
+                  ? "Answering…"
+                  : "Thinking…"
+                : "Searching…"}
             </>
           ) : mode === "ask" ? (
             <>
@@ -198,9 +308,48 @@ export function VideoSearchCard({ user, videos }: Props) {
 
       {askOut ? (
         <div className="mt-8 border-t border-white/[0.06] pt-6">
-          <p className="text-xs font-semibold uppercase tracking-wider text-violet-400/90">Answer</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-violet-400/90">Answer</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void onCopyMarkdown()}
+                disabled={loading || !askOut.answer.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-violet-500/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Copy className="h-3.5 w-3.5" aria-hidden />
+                Copy markdown
+              </button>
+              <button
+                type="button"
+                onClick={onDownloadMarkdown}
+                disabled={loading || !askOut.answer.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-violet-500/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden />
+                Download .md
+              </button>
+              <button
+                type="button"
+                onClick={() => void onShareMarkdown()}
+                disabled={loading || !askOut.answer.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-black/30 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-violet-500/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Share2 className="h-3.5 w-3.5" aria-hidden />
+                Share
+              </button>
+            </div>
+          </div>
+          {exportHint ? (
+            <p className="mt-2 text-xs text-emerald-400/90" role="status">
+              {exportHint}
+            </p>
+          ) : null}
           <div className="mt-3 whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/30 p-4 text-sm leading-relaxed text-zinc-200">
-            {askOut.answer}
+            {askOut.answer || (streaming ? "…" : "")}
+            {streaming && askOut.answer ? (
+              <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-violet-400/80 align-middle" />
+            ) : null}
           </div>
 
           {askOut.citations.length > 0 ? (
