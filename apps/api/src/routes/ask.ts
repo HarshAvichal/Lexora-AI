@@ -1,12 +1,13 @@
 import { Router, type Response } from "express";
 import { isUuid } from "../lib/uuid";
 import { requireAuth } from "../middleware/require-auth";
+import { generateRagAnswer } from "../services/rag-answer";
 import { semanticRetrieve } from "../services/semantic-retrieval";
 
 const router = Router();
 
-const MAX_LIMIT = 25;
-const DEFAULT_LIMIT = 8;
+const MAX_CONTEXT = 16;
+const DEFAULT_CONTEXT = 10;
 
 function jsonError(res: Response, status: number, error: string, message: string): void {
   res.status(status).json({ error, message });
@@ -35,24 +36,26 @@ router.post("/", requireAuth, async (req, res) => {
     videoId = body.videoId;
   }
 
-  let limit = DEFAULT_LIMIT;
+  let limit = DEFAULT_CONTEXT;
   if (body.limit !== undefined && body.limit !== null) {
     const n = Number(body.limit);
     if (!Number.isFinite(n) || n < 1) {
       jsonError(res, 400, "invalid_limit", "limit must be a positive number");
       return;
     }
-    limit = Math.min(Math.floor(n), MAX_LIMIT);
+    limit = Math.min(Math.floor(n), MAX_CONTEXT);
   }
 
   try {
-    const results = await semanticRetrieve({
+    const hits = await semanticRetrieve({
       ownerUserId: user.id,
       query: q,
       videoId,
       limit,
     });
-    res.status(200).json({ results });
+
+    const { answer, citations } = await generateRagAnswer(q, hits);
+    res.status(200).json({ answer, citations });
   } catch (err) {
     const e = err as Error & { code?: string };
     if (e.code === "VIDEO_NOT_FOUND") {
@@ -60,9 +63,9 @@ router.post("/", requireAuth, async (req, res) => {
       return;
     }
     const message = e instanceof Error ? e.message : String(err);
-    console.error("[search]", err);
-    jsonError(res, 503, "search_unavailable", message);
+    console.error("[ask]", err);
+    jsonError(res, 503, "ask_unavailable", message);
   }
 });
 
-export const searchRouter = router;
+export const askRouter = router;

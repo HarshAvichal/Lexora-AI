@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, Loader2, Search } from "lucide-react";
+import { ExternalLink, Loader2, MessageCircle, Search } from "lucide-react";
 import type { User } from "firebase/auth";
-import type { SearchResultItem, VideoDto } from "@/lib/api";
-import { semanticSearch } from "@/lib/api";
+import type { AskResponse, SearchResultItem, VideoDto } from "@/lib/api";
+import { ragAsk, semanticSearch } from "@/lib/api";
 
 function formatTimestampMs(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -22,35 +22,56 @@ function youtubeAtSeconds(youtubeVideoId: string, startMs: number): string {
   return `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeVideoId)}&t=${t}s`;
 }
 
+type Mode = "search" | "ask";
+
 type Props = {
   user: User;
   videos: VideoDto[];
 };
 
 export function VideoSearchCard({ user, videos }: Props) {
+  const [mode, setMode] = useState<Mode>("ask");
   const [query, setQuery] = useState("");
   const [videoId, setVideoId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResultItem[] | null>(null);
+  const [askOut, setAskOut] = useState<AskResponse | null>(null);
 
-  async function onSearch(e: React.FormEvent) {
+  function switchMode(next: Mode) {
+    setMode(next);
+    setError(null);
+    setResults(null);
+    setAskOut(null);
+  }
+
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const q = query.trim();
     if (!q || loading) return;
     setLoading(true);
     setError(null);
     setResults(null);
+    setAskOut(null);
     try {
       const token = await user.getIdToken();
-      const hits = await semanticSearch(token, {
-        query: q,
-        ...(videoId ? { videoId } : {}),
-        limit: 10,
-      });
-      setResults(hits);
+      if (mode === "search") {
+        const hits = await semanticSearch(token, {
+          query: q,
+          ...(videoId ? { videoId } : {}),
+          limit: 10,
+        });
+        setResults(hits);
+      } else {
+        const out = await ragAsk(token, {
+          query: q,
+          ...(videoId ? { videoId } : {}),
+          limit: 12,
+        });
+        setAskOut(out);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed.");
+      setError(err instanceof Error ? err.message : "Request failed.");
     } finally {
       setLoading(false);
     }
@@ -58,31 +79,69 @@ export function VideoSearchCard({ user, videos }: Props) {
 
   return (
     <section className="rounded-2xl border border-white/[0.08] bg-lexora-surface/60 p-6 backdrop-blur-sm">
-      <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-600/30 to-violet-600/25 text-cyan-100">
-          <Search className="h-5 w-5" aria-hidden />
-        </span>
-        <div>
-          <h2 className="font-display text-xl font-semibold text-white">Search transcripts</h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Semantic search over ingested chunks (Ollama embeddings + Qdrant). Results include
-            timestamps you can open on YouTube.
-          </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-600/30 to-violet-600/25 text-cyan-100">
+            {mode === "search" ? (
+              <Search className="h-5 w-5" aria-hidden />
+            ) : (
+              <MessageCircle className="h-5 w-5" aria-hidden />
+            )}
+          </span>
+          <div>
+            <h2 className="font-display text-xl font-semibold text-white">Search &amp; ask</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              <strong className="text-zinc-400">Ask</strong> uses retrieved transcript excerpts and
+              Ollama chat to answer with <strong className="text-zinc-400">[1] [2]</strong> citations.
+              <strong className="text-zinc-400"> Search</strong> shows raw semantic hits. For answers that
+            stay on <strong className="text-zinc-400">one recording only</strong>, choose that video
+            under Scope.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 rounded-lg border border-white/[0.08] bg-black/30 p-1">
+          <button
+            type="button"
+            onClick={() => switchMode("ask")}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+              mode === "ask"
+                ? "bg-violet-600/40 text-white"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            Ask
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMode("search")}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+              mode === "search"
+                ? "bg-cyan-600/35 text-cyan-100"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            Search
+          </button>
         </div>
       </div>
 
-      <form onSubmit={(e) => void onSearch(e)} className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end">
+      <form onSubmit={(e) => void onSubmit(e)} className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1 space-y-2">
           <label htmlFor="search-q" className="sr-only">
-            Search query
+            Query
           </label>
           <input
             id="search-q"
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ask in natural language…"
-            className="w-full rounded-xl border border-white/[0.1] bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:border-cyan-500/40 focus:outline-none focus:ring-1 focus:ring-cyan-500/30"
+            placeholder={
+              mode === "ask"
+                ? "What happens in the video when…?"
+                : "Keywords or natural language…"
+            }
+            className="w-full rounded-xl border border-white/[0.1] bg-black/30 px-4 py-3 text-sm text-white placeholder:text-zinc-600 focus:border-violet-500/40 focus:outline-none focus:ring-1 focus:ring-violet-500/30"
           />
           <div className="flex flex-wrap items-center gap-2">
             <label htmlFor="search-video" className="text-xs text-zinc-500">
@@ -92,7 +151,7 @@ export function VideoSearchCard({ user, videos }: Props) {
               id="search-video"
               value={videoId}
               onChange={(e) => setVideoId(e.target.value)}
-              className="max-w-full rounded-lg border border-white/[0.1] bg-black/40 px-3 py-2 text-xs text-zinc-200 focus:border-cyan-500/40 focus:outline-none"
+              className="max-w-full rounded-lg border border-white/[0.1] bg-black/40 px-3 py-2 text-xs text-zinc-200 focus:border-violet-500/40 focus:outline-none"
             >
               <option value="">All your videos</option>
               {videos.map((v) => (
@@ -106,12 +165,21 @@ export function VideoSearchCard({ user, videos }: Props) {
         <button
           type="submit"
           disabled={loading || !query.trim()}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-5 py-3 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+          className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+            mode === "ask"
+              ? "border border-violet-500/45 bg-violet-600/20 text-violet-100 hover:bg-violet-600/30"
+              : "border border-cyan-500/40 bg-cyan-500/15 text-cyan-100 hover:bg-cyan-500/25"
+          }`}
         >
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              Searching…
+              {mode === "ask" ? "Thinking…" : "Searching…"}
+            </>
+          ) : mode === "ask" ? (
+            <>
+              <MessageCircle className="h-4 w-4" aria-hidden />
+              Get answer
             </>
           ) : (
             <>
@@ -126,6 +194,42 @@ export function VideoSearchCard({ user, videos }: Props) {
         <p className="mt-4 text-sm text-amber-400" role="alert">
           {error}
         </p>
+      ) : null}
+
+      {askOut ? (
+        <div className="mt-8 border-t border-white/[0.06] pt-6">
+          <p className="text-xs font-semibold uppercase tracking-wider text-violet-400/90">Answer</p>
+          <div className="mt-3 whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/30 p-4 text-sm leading-relaxed text-zinc-200">
+            {askOut.answer}
+          </div>
+
+          {askOut.citations.length > 0 ? (
+            <div className="mt-8">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Sources</p>
+              <ul className="mt-3 space-y-3">
+                {askOut.citations.map((c) => (
+                  <li key={c.chunkId}>
+                    <article className="rounded-xl border border-white/[0.06] bg-black/20 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-violet-300">[{c.index}]</span>
+                        <a
+                          href={youtubeAtSeconds(c.youtubeVideoId, c.startMs)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-violet-400 hover:text-violet-300"
+                        >
+                          {c.videoTitle ?? "Video"} · {formatTimestampMs(c.startMs)}
+                          <ExternalLink className="h-3 w-3" aria-hidden />
+                        </a>
+                      </div>
+                      <p className="mt-2 text-xs leading-relaxed text-zinc-500">{c.excerpt}</p>
+                    </article>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {results !== null ? (

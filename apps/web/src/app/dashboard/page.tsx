@@ -122,8 +122,8 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="mt-2 max-w-xl text-zinc-500">
-              Ingest YouTube videos, embed transcripts with Ollama, search with Qdrant, and jump to
-              timestamps on YouTube.
+              Ingest YouTube videos, search transcripts, ask questions with cited answers, and open
+              the exact moment on YouTube.
             </p>
           </div>
         </div>

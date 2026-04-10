@@ -130,3 +130,40 @@ export async function semanticSearch(
   const data = (await res.json()) as { results: SearchResultItem[] };
   return data.results;
 }
+
+export type AskCitation = {
+  index: number;
+  chunkId: string;
+  videoId: string;
+  videoTitle: string | null;
+  youtubeVideoId: string;
+  startMs: number;
+  endMs: number;
+  score: number;
+  excerpt: string;
+};
+
+export type AskResponse = {
+  answer: string;
+  citations: AskCitation[];
+};
+
+export async function ragAsk(
+  idToken: string,
+  params: { query: string; videoId?: string; limit?: number },
+): Promise<AskResponse> {
+  const res = await fetch(`${base}/v1/ask`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: params.query,
+      ...(params.videoId ? { videoId: params.videoId } : {}),
+      ...(params.limit != null ? { limit: params.limit } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(await readApiError(res));
+  return res.json() as Promise<AskResponse>;
+}

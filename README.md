@@ -40,11 +40,14 @@ packages/shared   # Shared types and constants
 
    If port `6379` / `6333` / `11434` is already in use on your machine, stop the conflicting service or remap ports in `docker-compose.yml` and update `.env`.
 
-4. **Pull the embedding model into Ollama** (required before the worker can index chunks):
+4. **Pull Ollama models** (required for ingestion embeddings and dashboard “Ask”):
 
    ```bash
    docker compose exec ollama ollama pull nomic-embed-text
+   docker compose exec ollama ollama pull llama3.2
    ```
+
+   You can set **`OLLAMA_CHAT_MODEL`** in `.env` to another pulled tag (e.g. `llama3.1:8b`).
 
 5. **Database migrations:**
 
@@ -59,14 +62,15 @@ Use **four terminals** (or a process manager). Order: infra → migrations (once
 | Step | Command | Purpose |
 |------|---------|--------|
 | 1 | `npm run compose:up` | Postgres, Redis, Qdrant, Ollama |
-| 2 | `docker compose exec ollama ollama pull nomic-embed-text` | Embedding model (once per machine) |
+| 2 | `docker compose exec ollama ollama pull nomic-embed-text` and `… pull llama3.2` | Embedding + chat models (once per machine) |
 | 3 | `npm run db:migrate` | Apply SQL migrations (after schema changes or first clone) |
 | 4 | `npm run dev:api` | Express API → [http://localhost:4000](http://localhost:4000) |
 | 5 | `npm run dev:worker` | Consumes `queued` ingestion jobs; embeds + upserts to Qdrant |
 | 6 | `npm run dev:web` | Next.js → [http://localhost:3000](http://localhost:3000) |
 
 **Health check:** `GET http://localhost:4000/health`  
-**With Firebase configured:** `GET http://localhost:4000/v1/me` with header `Authorization: Bearer <Firebase ID token>`.
+**With Firebase configured:** `GET http://localhost:4000/v1/me` with header `Authorization: Bearer <Firebase ID token>`.  
+**Semantic search:** `POST /v1/search` · **RAG answer + citations:** `POST /v1/ask` (same JSON shape: `query`, optional `videoId`, optional `limit`).
 
 **Note:** Videos ingested **before** embeddings were enabled have rows in Postgres but **no vectors in Qdrant**. Re-submit those URLs (or clear and re-ingest) so the worker runs the new embedding + indexing steps.
 
@@ -114,6 +118,8 @@ Used by **`POST /v1/search`** and the worker when indexing chunks. Defaults matc
 |----------|---------|--------|
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama HTTP API |
 | `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` | Must be pulled in Ollama |
+| `OLLAMA_CHAT_MODEL` | `llama3.2` | Chat model for **`POST /v1/ask`**; must be pulled |
+| `OLLAMA_CHAT_TEMPERATURE` | `0.15` | Lower = answers stick closer to retrieved transcript (0–2) |
 | `EMBEDDING_DIMENSION` | `768` | Must match the model’s output size |
 | `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant REST |
 | `QDRANT_COLLECTION` | `lexora_chunks` | Created automatically if missing |
