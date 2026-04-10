@@ -4,6 +4,7 @@ import express from "express";
 import { getPool } from "@lexora/db";
 import { requireAuth } from "./middleware/require-auth";
 import { ingestionJobsRouter } from "./routes/ingestion-jobs";
+import { searchRouter } from "./routes/search";
 import { videosRouter } from "./routes/videos";
 
 const app = express();
@@ -32,6 +33,7 @@ app.get("/health", async (_req, res) => {
 
 app.use("/v1/videos", videosRouter);
 app.use("/v1/ingestion-jobs", ingestionJobsRouter);
+app.use("/v1/search", searchRouter);
 
 app.get("/v1/me", requireAuth, (req, res) => {
   const u = req.lexoraUser;
