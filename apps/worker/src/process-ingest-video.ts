@@ -1,6 +1,14 @@
+import {
+  createQdrantClient,
+  deleteQdrantPointsForVideo,
+  embedTexts,
+  embeddingModel as ollamaEmbeddingModel,
+  ensureLexoraCollection,
+  upsertChunkPoints,
+} from "@lexora/vectors";
 import { chunks, ingestionJobs, videos } from "@lexora/db";
 import { getDb } from "@lexora/db";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { fetchTranscript } from "youtube-transcript";
 import { transcriptLinesToChunks } from "./chunk-transcript";
 import { fetchYouTubeOEmbed } from "./youtube-metadata";
@@ -86,6 +94,10 @@ export async function processIngestVideoJob(jobId: string): Promise<void> {
       return;
     }
 
+    const qdrant = createQdrantClient();
+    await ensureLexoraCollection(qdrant);
+    await deleteQdrantPointsForVideo(qdrant, video.id);
+
     await db.transaction(async (tx) => {
       await tx.delete(chunks).where(eq(chunks.videoId, video.id));
       const batchSize = 200;
@@ -100,7 +112,38 @@ export async function processIngestVideoJob(jobId: string): Promise<void> {
       .set({ status: "embedding" })
       .where(eq(ingestionJobs.id, jobId));
 
-    // Phase 1: embeddings + Qdrant not wired yet — advance status for observability.
+    const insertedRows = await db
+      .select()
+      .from(chunks)
+      .where(eq(chunks.videoId, video.id))
+      .orderBy(asc(chunks.chunkIndex));
+
+    const texts = insertedRows.map((r) => r.chunkText);
+    const vectors = await embedTexts(texts, 4);
+
+    const points = insertedRows.map((r, i) => ({
+      id: r.id,
+      vector: vectors[i]!,
+      payload: {
+        chunkId: r.id,
+        videoId: video.id,
+        ownerUserId: job.ownerUserId,
+        chunkIndex: r.chunkIndex,
+        startMs: r.startMs,
+        endMs: r.endMs,
+      },
+    }));
+
+    await upsertChunkPoints(qdrant, points);
+
+    await db
+      .update(chunks)
+      .set({
+        embeddingModel: ollamaEmbeddingModel(),
+        embeddingVersion: "1",
+      })
+      .where(eq(chunks.videoId, video.id));
+
     await db
       .update(ingestionJobs)
       .set({ status: "indexing" })
@@ -116,7 +159,7 @@ export async function processIngestVideoJob(jobId: string): Promise<void> {
       })
       .where(eq(ingestionJobs.id, jobId));
 
-    console.log(`[worker] job ${jobId} completed (${chunkRows.length} chunks)`);
+    console.log(`[worker] job ${jobId} completed (${insertedRows.length} chunks, indexed in Qdrant)`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[worker] job ${jobId} failed:`, err);

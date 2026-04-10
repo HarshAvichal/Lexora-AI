@@ -97,3 +97,146 @@ export async function fetchIngestionJob(
   const data = (await res.json()) as { job: IngestionJobDto };
   return data.job;
 }
+
+export type SearchResultItem = {
+  score: number;
+  chunkId: string;
+  videoId: string;
+  videoTitle: string | null;
+  youtubeVideoId: string;
+  chunkIndex: number;
+  startMs: number;
+  endMs: number;
+  chunkText: string;
+};
+
+export async function semanticSearch(
+  idToken: string,
+  params: { query: string; videoId?: string; limit?: number },
+): Promise<SearchResultItem[]> {
+  const res = await fetch(`${base}/v1/search`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: params.query,
+      ...(params.videoId ? { videoId: params.videoId } : {}),
+      ...(params.limit != null ? { limit: params.limit } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(await readApiError(res));
+  const data = (await res.json()) as { results: SearchResultItem[] };
+  return data.results;
+}
+
+export type AskCitation = {
+  index: number;
+  chunkId: string;
+  videoId: string;
+  videoTitle: string | null;
+  youtubeVideoId: string;
+  startMs: number;
+  endMs: number;
+  score: number;
+  excerpt: string;
+};
+
+export type AskResponse = {
+  answer: string;
+  citations: AskCitation[];
+};
+
+export async function ragAsk(
+  idToken: string,
+  params: { query: string; videoId?: string; limit?: number },
+): Promise<AskResponse> {
+  const res = await fetch(`${base}/v1/ask`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: params.query,
+      ...(params.videoId ? { videoId: params.videoId } : {}),
+      ...(params.limit != null ? { limit: params.limit } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error(await readApiError(res));
+  return res.json() as Promise<AskResponse>;
+}
+
+export type AskStreamEvent =
+  | { type: "citations"; citations: AskCitation[] }
+  | { type: "delta"; text: string }
+  | { type: "done" }
+  | { type: "error"; message: string; code?: string };
+
+/**
+ * POST /v1/ask/stream — SSE `data: { ... }\n\n` events until `done` or `error`.
+ */
+export async function ragAskStream(
+  idToken: string,
+  params: { query: string; videoId?: string; limit?: number },
+  onEvent: (ev: AskStreamEvent) => void,
+): Promise<void> {
+  const res = await fetch(`${base}/v1/ask/stream`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: params.query,
+      ...(params.videoId ? { videoId: params.videoId } : {}),
+      ...(params.limit != null ? { limit: params.limit } : {}),
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await readApiError(res));
+  }
+
+  const body = res.body;
+  if (!body) {
+    throw new Error("No response body");
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let carry = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      carry += decoder.decode(value, { stream: true });
+      const blocks = carry.split("\n\n");
+      carry = blocks.pop() ?? "";
+      for (const block of blocks) {
+        const dataLine = block
+          .split("\n")
+          .map((l) => l.trimEnd())
+          .find((l) => l.startsWith("data:"));
+        if (!dataLine) continue;
+        const json = dataLine.replace(/^data:\s?/, "").trim();
+        if (!json) continue;
+        let ev: AskStreamEvent;
+        try {
+          ev = JSON.parse(json) as AskStreamEvent;
+        } catch {
+          continue;
+        }
+        if (!ev || typeof ev !== "object" || !("type" in ev)) continue;
+        onEvent(ev);
+        if (ev.type === "error") {
+          return;
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
